@@ -8,7 +8,6 @@ class BLEService {
     this.isConnected = false;
     this.characteristicUUID = ''; // Will be set during scanning/connection
     this.serviceUUID = '';       // Will be set during scanning/connection
-    this.useResponseMode = true; // Default to using with response mode
 
     // Test modu - ESP32 olmadan test edebilmek için
     this.testMode = false;
@@ -223,13 +222,6 @@ class BLEService {
     }
   }
 
-  // Response modunu değiştirme
-  setResponseMode(useResponse) {
-    this.useResponseMode = useResponse;
-    this.log(`BLE veri gönderme modu: ${useResponse ? 'withResponse' : 'withoutResponse'}`);
-    return this.useResponseMode;
-  }
-
   // Send joystick data to the ESP32
   async sendJoystickData(motorValues) {
     if (this.testMode && this.isConnected) {
@@ -260,21 +252,12 @@ class BLEService {
 
       try {
         // writeCharacteristicWithResponseForDevice kullanacağız
-        if (this.useResponseMode) {
-          await this.bleManager.writeCharacteristicWithResponseForDevice(
-            this.device.id,
-            this.serviceUUID,
-            this.characteristicUUID,
-            btoa(dataString) // Base64 encode
-          );
-        } else {
-          await this.bleManager.writeCharacteristicWithoutResponseForDevice(
-            this.device.id,
-            this.serviceUUID,
-            this.characteristicUUID,
-            btoa(dataString) // Base64 encode
-          );
-        }
+        await this.bleManager.writeCharacteristicWithResponseForDevice(
+          this.device.id,
+          this.serviceUUID,
+          this.characteristicUUID,
+          btoa(dataString) // Base64 encode
+        );
 
         // Başarılı gönderim durumunu sadece zaman zaman loglayalım
         if (this.logCount % 20 === 0) { // Her 20 veride bir başarı logu
@@ -290,21 +273,12 @@ class BLEService {
           // Daha basit bir format deneyelim
           const plainText = `J:${motorValues.a.toFixed(0)}:${motorValues.b.toFixed(0)}:${motorValues.c.toFixed(0)}`;
 
-          if (this.useResponseMode) {
-            await this.bleManager.writeCharacteristicWithResponseForDevice(
-              this.device.id,
-              this.serviceUUID,
-              this.characteristicUUID,
-              btoa(plainText)
-            );
-          } else {
-            await this.bleManager.writeCharacteristicWithoutResponseForDevice(
-              this.device.id,
-              this.serviceUUID,
-              this.characteristicUUID,
-              btoa(plainText)
-            );
-          }
+          await this.bleManager.writeCharacteristicWithResponseForDevice(
+            this.device.id,
+            this.serviceUUID,
+            this.characteristicUUID,
+            btoa(plainText)
+          );
           this.log(`📤 ALTERNATİF FORMAT İLE VERİ GÖNDERİLDİ: ${plainText}`, 'success');
           return true;
         } catch (alternativeError) {
@@ -360,21 +334,12 @@ class BLEService {
       this.log(`📡 Test verisi gönderiliyor: "${testString}"`, 'test');
 
       // BLE yazma işlemi bleManager üzerinden yapılmalı
-      if (this.useResponseMode) {
-        await this.bleManager.writeCharacteristicWithResponseForDevice(
-          this.device.id,
-          this.serviceUUID,
-          this.characteristicUUID,
-          btoa(testString) // Base64 encode
-        );
-      } else {
-        await this.bleManager.writeCharacteristicWithoutResponseForDevice(
-          this.device.id,
-          this.serviceUUID,
-          this.characteristicUUID,
-          btoa(testString) // Base64 encode
-        );
-      }
+      await this.bleManager.writeCharacteristicWithResponseForDevice(
+        this.device.id,
+        this.serviceUUID,
+        this.characteristicUUID,
+        btoa(testString) // Base64 encode
+      );
 
       this.log('✅ TEST VERİSİ BAŞARIYLA GÖNDERİLDİ!', 'success');
       return true;

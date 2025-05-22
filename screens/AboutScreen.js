@@ -1,19 +1,28 @@
 import React from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, ScrollView, Image, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTheme } from '../themes/ThemeContext';
 
 const AboutScreen = ({ navigation }) => {
+  const { theme } = useTheme();
+
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
-      <View style={styles.container}>
-        <View style={styles.header}>
+    <SafeAreaView
+      style={[styles.safeArea, { backgroundColor: theme.backgroundColor }]}
+      edges={['top', 'left', 'right']}
+    >
+      <View style={[styles.container, { backgroundColor: theme.backgroundColor }]}>
+        <View style={[styles.header, {
+          backgroundColor: theme.secondaryBackground,
+          borderBottomColor: theme.borderColor
+        }]}>
           <TouchableOpacity
             style={styles.backButton}
             onPress={() => navigation.goBack()}
           >
-            <Text style={styles.backButtonText}>← Geri</Text>
+            <Text style={[styles.backButtonText, { color: theme.primaryColor }]}>← Geri</Text>
           </TouchableOpacity>
-          <Text style={styles.title}>Hakkında</Text>
+          <Text style={[styles.title, { color: theme.textColor }]}>Hakkında</Text>
         </View>
 
         <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
@@ -23,12 +32,15 @@ const AboutScreen = ({ navigation }) => {
             resizeMode="contain"
           />
 
-          <Text style={styles.appTitle}>Joystick Kontrol Uygulaması</Text>
-          <Text style={styles.version}>Sürüm 1.0.0</Text>
+          <Text style={[styles.appTitle, { color: theme.textColor }]}>Kumanda Kontrol Uygulaması</Text>
+          <Text style={[styles.version, { color: theme.secondaryTextColor }]}>Sürüm 1.0.0</Text>
 
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Proje Hakkında</Text>
-            <Text style={styles.aboutText}>
+          <View style={[styles.section, {
+            backgroundColor: theme.cardBackground,
+            borderColor: theme.borderColor
+          }]}>
+            <Text style={[styles.sectionTitle, { color: theme.textColor }]}>Proje Hakkında</Text>
+            <Text style={[styles.aboutText, { color: theme.textColor }]}>
               Bu uygulama, ESP32 tabanlı bir Stewart platformunu kontrol etmek için
               tasarlanmış bir bitirme projesi çalışmasıdır. Bluetooth Low Energy (BLE)
               üzerinden ESP32 Arduino modülüne bağlanır ve joystick hareketlerini kullanarak
@@ -36,39 +48,67 @@ const AboutScreen = ({ navigation }) => {
             </Text>
           </View>
 
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Özellikler</Text>
+          <View style={[styles.section, {
+            backgroundColor: theme.cardBackground,
+            borderColor: theme.borderColor
+          }]}>
+            <Text style={[styles.sectionTitle, { color: theme.textColor }]}>Özellikler</Text>
             <View style={styles.featureItem}>
-              <Text style={styles.bullet}>•</Text>
-              <Text style={styles.featureText}>BLE üzerinden ESP32 ile kablosuz iletişim</Text>
+              <Text style={[styles.bullet, { color: theme.primaryColor }]}>•</Text>
+              <Text style={[styles.featureText, { color: theme.textColor }]}>BLE üzerinden ESP32 ile kablosuz iletişim</Text>
             </View>
             <View style={styles.featureItem}>
-              <Text style={styles.bullet}>•</Text>
-              <Text style={styles.featureText}>Hassas joystick kontrolü</Text>
+              <Text style={[styles.bullet, { color: theme.primaryColor }]}>•</Text>
+              <Text style={[styles.featureText, { color: theme.textColor }]}>Hassas joystick kontrolü</Text>
             </View>
             <View style={styles.featureItem}>
-              <Text style={styles.bullet}>•</Text>
-              <Text style={styles.featureText}>Motor açı hesaplamaları</Text>
+              <Text style={[styles.bullet, { color: theme.primaryColor }]}>•</Text>
+              <Text style={[styles.featureText, { color: theme.textColor }]}>Motor açı hesaplamaları</Text>
             </View>
             <View style={styles.featureItem}>
-              <Text style={styles.bullet}>•</Text>
-              <Text style={styles.featureText}>Test modu ile donanım olmadan simülasyon</Text>
+              <Text style={[styles.bullet, { color: theme.primaryColor }]}>•</Text>
+              <Text style={[styles.featureText, { color: theme.textColor }]}>Test modu ile donanım olmadan simülasyon</Text>
             </View>
             <View style={styles.featureItem}>
-              <Text style={styles.bullet}>•</Text>
-              <Text style={styles.featureText}>Detaylı log ekranı</Text>
+              <Text style={[styles.bullet, { color: theme.primaryColor }]}>•</Text>
+              <Text style={[styles.featureText, { color: theme.textColor }]}>Detaylı log ekranı</Text>
             </View>
           </View>
 
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Geliştiriciler</Text>
-            <Text style={styles.aboutText}>
-              Bu uygulama, lisans bitirme projesi kapsamında öğrenciler tarafından geliştirilmiştir.
+          <View style={[styles.section, {
+            backgroundColor: theme.cardBackground,
+            borderColor: theme.borderColor
+          }]}>
+            <Text style={[styles.sectionTitle, { color: theme.textColor }]}>Proje Ekibi</Text>
+            <Text style={[styles.memberTitle, { color: theme.primaryColor }]}>Proje Sahipleri</Text>
+
+            <View style={styles.memberItem}>
+              <Text style={[styles.bullet, { color: theme.primaryColor }]}>•</Text>
+              <Text style={[styles.memberText, { color: theme.textColor }]}>İbrahim Semih Aşiroğlu</Text>
+            </View>
+            <View style={styles.memberItem}>
+              <Text style={[styles.bullet, { color: theme.primaryColor }]}>•</Text>
+              <Text style={[styles.memberText, { color: theme.textColor }]}>Barış Özgün Yılmaz</Text>
+            </View>
+            <View style={styles.memberItem}>
+              <Text style={[styles.bullet, { color: theme.primaryColor }]}>•</Text>
+              <Text style={[styles.memberText, { color: theme.textColor }]}>Ali Demirören</Text>
+            </View>
+
+            <Text style={[styles.memberTitle, { color: theme.primaryColor, marginTop: 20 }]}>Proje Danışmanı</Text>
+            <Text style={[styles.memberText, { color: theme.textColor, fontWeight: '500', marginLeft: 15 }]}>
+              Dr. Öğr. Üyesi Vildan Atalay Aydın
+            </Text>
+
+            <Text style={[styles.institutionText, { color: theme.secondaryTextColor, marginTop: 20 }]}>
+              İstanbul Üniversitesi - Cerrahpaşa{'\n'}
+              Bilgisayar Mühendisliği Bölümü{'\n'}
+              2023-2024 Akademik Yılı
             </Text>
           </View>
 
           <TouchableOpacity
-            style={styles.linkButton}
+            style={[styles.linkButton, { backgroundColor: theme.primaryColor }]}
             onPress={() => Linking.openURL('https://github.com/username/joystick-app')}
           >
             <Text style={styles.linkButtonText}>GitHub Sayfası</Text>
@@ -82,7 +122,6 @@ const AboutScreen = ({ navigation }) => {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#1a1a2e',
   },
   container: {
     flex: 1,
@@ -90,23 +129,19 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#232342',
     paddingVertical: 16,
     paddingHorizontal: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#4a4e69',
   },
   backButton: {
     marginRight: 15,
     padding: 5,
   },
   backButtonText: {
-    color: '#0099ff',
     fontSize: 16,
     fontWeight: 'bold',
   },
   title: {
-    color: '#e6e6e6',
     fontSize: 20,
     fontWeight: 'bold',
     letterSpacing: 0.5,
@@ -126,33 +161,27 @@ const styles = StyleSheet.create({
   appTitle: {
     fontSize: 22,
     fontWeight: 'bold',
-    color: '#e6e6e6',
     textAlign: 'center',
   },
   version: {
     fontSize: 16,
-    color: '#9a9a9a',
     marginTop: 5,
     marginBottom: 20,
     textAlign: 'center',
   },
   section: {
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
     borderRadius: 10,
     padding: 15,
     width: '90%',
     marginVertical: 10,
     borderWidth: 1,
-    borderColor: '#4a4e69',
   },
   sectionTitle: {
-    color: '#e6e6e6',
     fontSize: 18,
     fontWeight: 'bold',
     marginBottom: 10,
   },
   aboutText: {
-    color: '#e6e6e6',
     fontSize: 14,
     lineHeight: 20,
     textAlign: 'justify',
@@ -163,19 +192,37 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   bullet: {
-    color: '#0099ff',
     fontSize: 16,
     marginRight: 8,
     lineHeight: 20,
   },
   featureText: {
-    color: '#e6e6e6',
     fontSize: 14,
     flex: 1,
     lineHeight: 20,
   },
+  memberTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginTop: 10,
+    marginBottom: 8,
+  },
+  memberItem: {
+    flexDirection: 'row',
+    marginBottom: 5,
+    alignItems: 'center',
+    marginLeft: 10,
+  },
+  memberText: {
+    fontSize: 14,
+    flex: 1,
+  },
+  institutionText: {
+    fontSize: 12,
+    textAlign: 'center',
+    fontStyle: 'italic',
+  },
   linkButton: {
-    backgroundColor: '#0099ff',
     paddingVertical: 12,
     paddingHorizontal: 25,
     borderRadius: 8,

@@ -26,13 +26,21 @@ const ConstantsScreen = ({ navigation, route }) => {
 
   // Değer değişikliklerini işle
   const handleValueChange = (key, value) => {
-    // Sayısal değer kontrolü
-    const numValue = parseFloat(value);
-    if (!isNaN(numValue)) {
-      setTempConstants({...tempConstants, [key]: numValue});
-    } else if (value === '' || value === '-' || value === '.') {
-      // Boş değer, eksi işareti veya nokta girişine izin ver
-      setTempConstants({...tempConstants, [key]: value});
+    // Kullanıcı giriş değerini standart hale getir (virgülü noktaya çevir)
+    const normalizedValue = value.replace(',', '.');
+
+    // Boş değer, eksi, nokta veya virgül girişine izin ver
+    if (normalizedValue === '' || normalizedValue === '-' ||
+        normalizedValue === '.' || normalizedValue === ',') {
+      setTempConstants({...tempConstants, [key]: normalizedValue});
+      return;
+    }
+
+    // Ondalık basamak kontrolünü iyileştir - nokta veya virgül dahil geçerli sayı formatı
+    const regex = /^-?\d*[.,]?\d*$/;
+    if (regex.test(normalizedValue)) {
+      setTempConstants({...tempConstants, [key]: normalizedValue});
+      return;
     }
   };
 
@@ -43,7 +51,9 @@ const ConstantsScreen = ({ navigation, route }) => {
     let hasError = false;
 
     Object.entries(tempConstants).forEach(([key, value]) => {
-      const numValue = parseFloat(value);
+      // Virgül varsa noktaya çevir ve parseFloat ile dönüştür
+      const normalizedValue = String(value).replace(',', '.');
+      const numValue = parseFloat(normalizedValue);
       if (isNaN(numValue)) {
         hasError = true;
         return;

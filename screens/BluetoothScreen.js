@@ -12,10 +12,50 @@ const BluetoothScreen = ({ navigation, route }) => {
   const [devicesList, setDevicesList] = useState([]);
   const [selectedDevice, setSelectedDevice] = useState(null);
   const [testMode, setTestMode] = useState(false);
-  const [useResponseMode, setUseResponseMode] = useState(true);
   const [logs, setLogs] = useState([]);
-  const connectionCheckerRef = useRef(null);
   const timerRef = useRef(null);
+
+  // Bağlantı durumunu güncelleme fonksiyonu (basitleştirilmiş)
+  const updateConnectionStatus = () => {
+    const isConnected = BLEService.isDeviceConnected();
+    if (isConnected !== connected) {
+      addLog(`Bağlantı durumu değişti: ${isConnected ? 'Bağlı' : 'Bağlı Değil'}`);
+      setConnected(isConnected);
+
+      if (isConnected) {
+        setSelectedDevice(BLEService.device);
+      } else {
+        setSelectedDevice(null);
+      }
+    }
+    return isConnected;
+  };
+
+  useEffect(() => {
+    // Ekran açıldığında bağlantı durumunu kontrol et
+    const isConnected = BLEService.isDeviceConnected();
+    if (isConnected) {
+      setConnected(true);
+      setSelectedDevice(BLEService.device);
+      addLog('Mevcut bağlantı bulundu');
+    }
+
+    // Test mode durumunu BLEService'den al
+    setTestMode(BLEService.testMode);
+
+    // Ekrandan ayrılırken bağlantı bilgisini HomeScreen'e gönder
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+
+      if (BLEService.isDeviceConnected()) {
+        navigation.navigate('Joystick', { connected: true });
+        addLog('HomeScreen\'e bağlantı durumu iletiliyor: Bağlı');
+      }
+    };
+  }, []);
 
   // Geri sayım timer'ı
   useEffect(() => {
@@ -51,46 +91,6 @@ const BluetoothScreen = ({ navigation, route }) => {
     };
   }, [scanning]);
 
-  // Bağlantı durumunu güncelleme fonksiyonu (basitleştirilmiş)
-  const updateConnectionStatus = () => {
-    const isConnected = BLEService.isDeviceConnected();
-    if (isConnected !== connected) {
-      addLog(`Bağlantı durumu değişti: ${isConnected ? 'Bağlı' : 'Bağlı Değil'}`);
-      setConnected(isConnected);
-
-      if (isConnected) {
-        setSelectedDevice(BLEService.device);
-      } else {
-        setSelectedDevice(null);
-      }
-    }
-    return isConnected;
-  };
-
-  useEffect(() => {
-    // Ekran açıldığında bağlantı durumunu kontrol et
-    const isConnected = BLEService.isDeviceConnected();
-    if (isConnected) {
-      setConnected(true);
-      setSelectedDevice(BLEService.device);
-      addLog('Mevcut bağlantı bulundu');
-    }
-
-    // Test mode durumunu BLEService'den al
-    setTestMode(BLEService.testMode);
-
-    // Response mode durumunu BLEService'den al
-    setUseResponseMode(BLEService.useResponseMode);
-
-    // Ekrandan ayrılırken bağlantı bilgisini HomeScreen'e gönder
-    return () => {
-      if (BLEService.isDeviceConnected()) {
-        navigation.navigate('Joystick', { connected: true });
-        addLog('HomeScreen\'e bağlantı durumu iletiliyor: Bağlı');
-      }
-    };
-  }, []);
-
   // Log ekleme fonksiyonu
   const addLog = (message) => {
     const timestamp = new Date().toLocaleTimeString();
@@ -121,7 +121,32 @@ const BluetoothScreen = ({ navigation, route }) => {
     return () => clearInterval(logCleanupInterval);
   }, []);
 
-  // Logs Section'ı daha verimli hale getirelim
+  // Test modu değiştirme fonksiyonu
+  const toggleTestMode = () => {
+    const newTestMode = !testMode;
+    BLEService.setTestMode(newTestMode);
+    setTestMode(newTestMode);
+    addLog(`Test modu ${newTestMode ? 'açıldı' : 'kapatıldı'}`);
+  };
+
+  // Settings bölümünü düzenleyelim - sadece test modu kalsın, response modu kaldırılsın
+  const renderSettings = () => {
+    return (
+      <View style={styles.settingsContainer}>
+        <View style={styles.settingRow}>
+          <Text style={[styles.settingLabel, { color: theme.textColor }]}>Test Modu:</Text>
+          <Switch
+            value={testMode}
+            onValueChange={toggleTestMode}
+            trackColor={{ false: theme.borderColor, true: theme.primaryColor }}
+            thumbColor={testMode ? theme.primaryDarkColor : '#f4f3f4'}
+          />
+        </View>
+      </View>
+    );
+  };
+
+  // Logs Section'ı daha verimli hale getirelim ve daha geniş bir alanı kaplayacak şekilde ayarlayalım
   const renderLogs = () => {
     // Sadece son 10 log'u render edelim, kullanıcı isterse tam listeye bakabilir
     const visibleLogs = logs.slice(0, 10);
@@ -146,69 +171,6 @@ const BluetoothScreen = ({ navigation, route }) => {
         )}
       </View>
     );
-  };
-
-  // Test verisi gönderme fonksiyonu
-  const sendTestData = async () => {
-    // Bağlantı durumunu kontrol et
-    if (!BLEService.isDeviceConnected()) {
-      addLog("Test verisi gönderilemedi: Bağlı cihaz yok");
-      updateConnectionStatus(); // UI'ı güncelle
-      return;
-    }
-
-    // Test motor değerleri
-    const testMotorValues = {
-      a: 10.50,
-      b: -15.25,
-      c: 20.00
-    };
-
-    addLog(`Test joystick verisi gönderiliyor: A:${testMotorValues.a}, B:${testMotorValues.b}, C:${testMotorValues.c}`);
-
-    try {
-      // Önce basit bir test dizesi gönderelim
-      addLog("Basit test dizesi gönderiliyor: 'HELLO_ESP32'");
-      const stringSuccess = await BLEService.sendTestData("HELLO_ESP32");
-      if (stringSuccess) {
-        addLog("✅ TEST DİZESİ GÖNDERİLDİ");
-      } else {
-        addLog("❌ Test dizesi gönderilemedi");
-        updateConnectionStatus(); // Bağlantı durumunu güncelle
-      }
-
-      // Kısa bir bekleme ekleyelim
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      // Sonra motor değerlerini gönderelim
-      addLog("Joystick test verisi gönderiliyor...");
-      const success = await BLEService.sendJoystickData(testMotorValues);
-      if (success) {
-        addLog("✅ JOYSTICK TEST VERİSİ GÖNDERİLDİ");
-      } else {
-        addLog("❌ Joystick test verisi gönderilemedi");
-        updateConnectionStatus(); // Bağlantı durumunu güncelle
-      }
-    } catch (error) {
-      addLog(`❌ Test verisi gönderme hatası: ${error}`);
-      updateConnectionStatus(); // Hata durumunda bağlantıyı kontrol et
-    }
-  };
-
-  // Test modu değiştirme fonksiyonu
-  const toggleTestMode = () => {
-    const newTestMode = !testMode;
-    BLEService.setTestMode(newTestMode);
-    setTestMode(newTestMode);
-    addLog(`Test modu ${newTestMode ? 'açıldı' : 'kapatıldı'}`);
-  };
-
-  // Response modu değiştirme fonksiyonu
-  const toggleResponseMode = () => {
-    const newResponseMode = !useResponseMode;
-    BLEService.setResponseMode(newResponseMode);
-    setUseResponseMode(newResponseMode);
-    addLog(`Veri gönderme modu: ${newResponseMode ? 'withResponse' : 'withoutResponse'}`);
   };
 
   const startScan = async () => {
@@ -386,39 +348,12 @@ const BluetoothScreen = ({ navigation, route }) => {
                 >
                   <Text style={styles.buttonText}>Bağlantıyı Kes</Text>
                 </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.actionButton, { backgroundColor: theme.successColor }]}
-                  onPress={sendTestData}
-                >
-                  <Text style={styles.buttonText}>Test Verisi</Text>
-                </TouchableOpacity>
               </View>
             )}
           </View>
 
           {/* Settings */}
-          <View style={styles.settingsContainer}>
-            <View style={styles.settingRow}>
-              <Text style={[styles.settingLabel, { color: theme.textColor }]}>Test Modu:</Text>
-              <Switch
-                value={testMode}
-                onValueChange={toggleTestMode}
-                trackColor={{ false: theme.borderColor, true: theme.primaryColor }}
-                thumbColor={testMode ? theme.primaryDarkColor : '#f4f3f4'}
-              />
-            </View>
-
-            <View style={styles.settingRow}>
-              <Text style={[styles.settingLabel, { color: theme.textColor }]}>Response Modu:</Text>
-              <Switch
-                value={useResponseMode}
-                onValueChange={toggleResponseMode}
-                trackColor={{ false: theme.borderColor, true: theme.primaryColor }}
-                thumbColor={useResponseMode ? theme.primaryDarkColor : '#f4f3f4'}
-              />
-            </View>
-          </View>
+          {renderSettings()}
         </View>
 
         {/* Device List */}
@@ -448,7 +383,10 @@ const BluetoothScreen = ({ navigation, route }) => {
         {/* Logs Section */}
         <View style={[styles.logsSection, {
           backgroundColor: theme.cardBackground,
-          borderColor: theme.borderColor
+          borderColor: theme.borderColor,
+          flex: 1,
+          marginTop: 10,
+          marginBottom: 5
         }]}>
           <View style={styles.logsTitleRow}>
             <Text style={[styles.sectionTitle, { color: theme.textColor }]}>Loglar</Text>
