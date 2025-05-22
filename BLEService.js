@@ -9,14 +9,6 @@ class BLEService {
     this.characteristicUUID = ''; // Will be set during scanning/connection
     this.serviceUUID = '';       // Will be set during scanning/connection
 
-    // Test modu - ESP32 olmadan test edebilmek için
-    this.testMode = false;
-    this.testDevices = [
-      { id: 'test-esp32-01', name: 'Test ESP32 #1' },
-      { id: 'test-esp32-02', name: 'Test ESP32 #2' },
-      { id: 'test-esp32-03', name: 'Test ESP32 #3' },
-    ];
-
     // Log optimizasyonu için değişkenler
     this.lastLogTime = 0;
     this.logThrottleTime = 500; // ms cinsinden - aynı log kategorisinde en az bu kadar ms geçsin
@@ -42,13 +34,6 @@ class BLEService {
     // Log basmaya devam et
     this.lastLogTime = now;
     console.log(message);
-  }
-
-  // Test modunu açma/kapama
-  setTestMode(enabled) {
-    this.testMode = enabled;
-    this.log(`Test modu ${enabled ? 'açıldı' : 'kapatıldı'}`);
-    return this.testMode;
   }
 
   // Request necessary permissions for BLE
@@ -77,17 +62,6 @@ class BLEService {
   // Start BLE scanning
   async startScan(onDeviceDiscovered) {
     try {
-      // Test modundaysa, test cihazlarını göster
-      if (this.testMode) {
-        this.log('Test modunda tarama başlatıldı');
-        setTimeout(() => {
-          this.testDevices.forEach(device => {
-            onDeviceDiscovered(device);
-          });
-        }, 1000);
-        return true;
-      }
-
       const granted = await this.requestPermissions();
       if (!granted) {
         this.log('BLE izinleri verilmedi', 'error');
@@ -117,26 +91,17 @@ class BLEService {
 
   // Stop scanning
   stopScan() {
-    if (!this.testMode) {
-      try {
-        this.log('BLE taraması durdurulması için istek gönderildi');
-        this.bleManager.stopDeviceScan();
-        this.log('BLE taraması durduruldu');
-      } catch (error) {
-        this.log('Taramayı durdurma hatası: ' + error, 'error');
-      }
-    } else {
-      this.log('Test modunda tarama durduruldu');
+    try {
+      this.log('BLE taraması durdurulması için istek gönderildi');
+      this.bleManager.stopDeviceScan();
+      this.log('BLE taraması durduruldu');
+    } catch (error) {
+      this.log('Taramayı durdurma hatası: ' + error, 'error');
     }
   }
 
   // Gerçek bağlantı durumunu kontrol eder
   async isDeviceConnected() {
-    // Test modunda her zaman bağlı kabul edelim
-    if (this.testMode) {
-      return true;
-    }
-
     // Cihaz nesnesi yoksa kesinlikle bağlı değiliz
     if (!this.device) {
       this.isConnected = false;
@@ -184,21 +149,6 @@ class BLEService {
   // Connect to a device
   async connectToDevice(device) {
     try {
-      // Test modunda bağlantıyı simüle et
-      if (this.testMode) {
-        this.log(`Test modunda ${device.name || device.id} cihazına bağlanılıyor...`);
-        // Bağlantıyı simüle et
-        await new Promise(resolve => setTimeout(resolve, 1000));
-
-        this.device = device;
-        this.isConnected = true;
-        this.serviceUUID = 'TEST-SERVICE-UUID';
-        this.characteristicUUID = 'TEST-CHAR-UUID';
-
-        this.log('Test cihazına bağlantı başarılı');
-        return true;
-      }
-
       // Stop scanning when connecting
       this.stopScan();
 
@@ -305,11 +255,6 @@ class BLEService {
 
   // Send joystick data to the ESP32
   async sendJoystickData(motorValues) {
-    if (this.testMode && this.isConnected) {
-      this.log(`📤 JOYSTICK VERİSİ GÖNDERİLDİ (Test modu): A:${motorValues.a}, B:${motorValues.b}, C:${motorValues.c}`, 'data');
-      return true;
-    }
-
     // Bağlantı durumunu kontrol et - minimum log ile
     if (!this.isConnected || !this.device) {
       this.log('❌ Joystick verisi gönderilemedi: Bağlı cihaz yok', 'error');
@@ -399,37 +344,6 @@ class BLEService {
     return btoa(binary);
   }
 
-  // Test verisi gönderme - debug için
-  async sendTestData(testString = "HELLO_ESP32") {
-    if (this.testMode && this.isConnected) {
-      this.log(`📤 TEST VERİSİ GÖNDERİLDİ (Test modu): "${testString}"`, 'test');
-      return true;
-    }
-
-    if (!this.isConnected || !this.device) {
-      this.log('❌ Test verisi gönderilemedi: Bağlı cihaz yok', 'error');
-      return false;
-    }
-
-    try {
-      this.log(`📡 Test verisi gönderiliyor: "${testString}"`, 'test');
-
-      // BLE yazma işlemi bleManager üzerinden yapılmalı
-      await this.bleManager.writeCharacteristicWithResponseForDevice(
-        this.device.id,
-        this.serviceUUID,
-        this.characteristicUUID,
-        btoa(testString) // Base64 encode
-      );
-
-      this.log('✅ TEST VERİSİ BAŞARIYLA GÖNDERİLDİ!', 'success');
-      return true;
-    } catch (error) {
-      this.log(`❌ Test verisi gönderim hatası: ${error}`, 'error');
-      return false;
-    }
-  }
-
   // JSON to base64 (React Native uyumlu)
   jsonToBase64(json) {
     const jsonStr = JSON.stringify(json);
@@ -438,13 +352,6 @@ class BLEService {
 
   // Disconnect from device
   disconnect() {
-    if (this.testMode && this.isConnected) {
-      this.log('Test cihaz bağlantısı kesiliyor...');
-      this.isConnected = false;
-      this.device = null;
-      return;
-    }
-
     if (this.device) {
       this.device.cancelConnection();
       this.isConnected = false;
@@ -455,11 +362,6 @@ class BLEService {
 
   // Check if BLE is enabled
   async checkBleState() {
-    if (this.testMode) {
-      this.log('Test modunda Bluetooth durumu kontrolü yapılıyor');
-      return true;
-    }
-
     const state = await this.bleManager.state();
     this.log(`Bluetooth durumu: ${state}`);
     return state === 'PoweredOn';

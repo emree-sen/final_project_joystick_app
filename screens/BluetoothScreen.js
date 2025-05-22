@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, FlatList, Alert, ActivityIndicator, Switch } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, FlatList, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import BLEService from '../BLEService';
 import { useTheme } from '../themes/ThemeContext';
@@ -11,7 +11,6 @@ const BluetoothScreen = ({ navigation, route }) => {
   const [connected, setConnected] = useState(false);
   const [devicesList, setDevicesList] = useState([]);
   const [selectedDevice, setSelectedDevice] = useState(null);
-  const [testMode, setTestMode] = useState(false);
   const [logs, setLogs] = useState([]);
   const timerRef = useRef(null);
 
@@ -50,9 +49,6 @@ const BluetoothScreen = ({ navigation, route }) => {
     if (!BLEService.device) return false;
 
     try {
-      // Test modundaysa bağlantı var kabul et
-      if (BLEService.testMode) return true;
-
       // BleManager'dan durumu kontrol et
       return await BLEService.isDeviceConnected();
     } catch (error) {
@@ -82,9 +78,6 @@ const BluetoothScreen = ({ navigation, route }) => {
     };
 
     checkConnection();
-
-    // Test mode durumunu BLEService'den al
-    setTestMode(BLEService.testMode);
 
     // Bluetooth ekranı açık olduğu sürece her 5 saniyede bir bağlantı durumunu kontrol et
     const connectionCheckInterval = setInterval(async () => {
@@ -187,31 +180,6 @@ const BluetoothScreen = ({ navigation, route }) => {
     return () => clearInterval(logCleanupInterval);
   }, []);
 
-  // Test modu değiştirme fonksiyonu
-  const toggleTestMode = () => {
-    const newTestMode = !testMode;
-    BLEService.setTestMode(newTestMode);
-    setTestMode(newTestMode);
-    addLog(`Test modu ${newTestMode ? 'açıldı' : 'kapatıldı'}`);
-  };
-
-  // Settings bölümünü düzenleyelim - sadece test modu kalsın, response modu kaldırılsın
-  const renderSettings = () => {
-    return (
-      <View style={styles.settingsContainer}>
-        <View style={styles.settingRow}>
-          <Text style={[styles.settingLabel, { color: theme.textColor }]}>Test Modu:</Text>
-          <Switch
-            value={testMode}
-            onValueChange={toggleTestMode}
-            trackColor={{ false: theme.borderColor, true: theme.primaryColor }}
-            thumbColor={testMode ? theme.primaryDarkColor : '#f4f3f4'}
-          />
-        </View>
-      </View>
-    );
-  };
-
   // Logs Section'ı daha verimli hale getirelim ve daha geniş bir alanı kaplayacak şekilde ayarlayalım
   const renderLogs = () => {
     // Sadece son 10 log'u render edelim, kullanıcı isterse tam listeye bakabilir
@@ -298,21 +266,6 @@ const BluetoothScreen = ({ navigation, route }) => {
     try {
       setSelectedDevice(device);
       addLog(`'${device.name || device.id}' cihazına bağlanılıyor...`);
-
-      // Test modunda ise özel işleme
-      if (BLEService.testMode) {
-        const connectionSuccessful = await BLEService.connectToDevice(device);
-        if (connectionSuccessful) {
-          setConnected(true);
-          addLog(`'${device.name || device.id}' cihazına test bağlantısı başarılı!`);
-          Alert.alert('Bağlantı Başarılı', `${device.name || device.id} cihazına bağlandı (TEST MODU).`);
-          navigation.navigate('Joystick', { connected: true });
-        } else {
-          addLog(`'${device.name || device.id}' cihazına test bağlantısı başarısız!`);
-          Alert.alert('Bağlantı Hatası', 'Test modunda cihaz bağlantısı başarısız oldu.');
-        }
-        return;
-      }
 
       // Gerçek cihaz bağlantı işlemi
       const connectionSuccessful = await BLEService.connectToDevice(device);
@@ -455,9 +408,6 @@ const BluetoothScreen = ({ navigation, route }) => {
               </View>
             )}
           </View>
-
-          {/* Settings */}
-          {renderSettings()}
         </View>
 
         {/* Device List */}
@@ -603,26 +553,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     textAlign: 'center',
-  },
-
-  // Settings
-  settingsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-evenly',
-    alignItems: 'center',
-    marginTop: 15,
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: '#4a4e6930',
-  },
-  settingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-  },
-  settingLabel: {
-    fontSize: 14,
-    marginRight: 8,
   },
 
   // Devices Section
