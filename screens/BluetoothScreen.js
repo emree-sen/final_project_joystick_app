@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, FlatList, Alert, ActivityIndicator, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import BLEService from '../BLEService';
@@ -7,23 +7,74 @@ import { useTheme } from '../themes/ThemeContext';
 const BluetoothScreen = ({ navigation, route }) => {
   const { theme } = useTheme();
   const [scanning, setScanning] = useState(false);
+  const [scanTimer, setScanTimer] = useState(10); // 10 saniye geri sayım
   const [connected, setConnected] = useState(false);
   const [devicesList, setDevicesList] = useState([]);
   const [selectedDevice, setSelectedDevice] = useState(null);
   const [testMode, setTestMode] = useState(false);
   const [useResponseMode, setUseResponseMode] = useState(true);
   const [logs, setLogs] = useState([]);
+  const connectionCheckerRef = useRef(null);
+  const timerRef = useRef(null);
+
+  // Geri sayım timer'ı
+  useEffect(() => {
+    if (scanning) {
+      // Başlangıçta timer'ı 10'a ayarla
+      setScanTimer(10);
+
+      // Her saniye timer'ı bir azalt
+      timerRef.current = setInterval(() => {
+        setScanTimer(prev => {
+          if (prev <= 1) {
+            // Zaman dolduğunda timer'ı temizle
+            clearInterval(timerRef.current);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } else {
+      // Tarama durduğunda timer'ı temizle
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    }
+
+    // Component unmount olduğunda timer'ı temizle
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, [scanning]);
+
+  // Bağlantı durumunu güncelleme fonksiyonu (basitleştirilmiş)
+  const updateConnectionStatus = () => {
+    const isConnected = BLEService.isDeviceConnected();
+    if (isConnected !== connected) {
+      addLog(`Bağlantı durumu değişti: ${isConnected ? 'Bağlı' : 'Bağlı Değil'}`);
+      setConnected(isConnected);
+
+      if (isConnected) {
+        setSelectedDevice(BLEService.device);
+      } else {
+        setSelectedDevice(null);
+      }
+    }
+    return isConnected;
+  };
 
   useEffect(() => {
     // Ekran açıldığında bağlantı durumunu kontrol et
-    const checkConnection = async () => {
-      if (BLEService.isConnected) {
-        setConnected(true);
-        setSelectedDevice(BLEService.device);
-      }
-    };
-
-    checkConnection();
+    const isConnected = BLEService.isDeviceConnected();
+    if (isConnected) {
+      setConnected(true);
+      setSelectedDevice(BLEService.device);
+      addLog('Mevcut bağlantı bulundu');
+    }
 
     // Test mode durumunu BLEService'den al
     setTestMode(BLEService.testMode);
@@ -33,10 +84,9 @@ const BluetoothScreen = ({ navigation, route }) => {
 
     // Ekrandan ayrılırken bağlantı bilgisini HomeScreen'e gönder
     return () => {
-      if (connected) {
-        navigation.navigate('Joystick', {
-          connected: true
-        });
+      if (BLEService.isDeviceConnected()) {
+        navigation.navigate('Joystick', { connected: true });
+        addLog('HomeScreen\'e bağlantı durumu iletiliyor: Bağlı');
       }
     };
   }, []);
@@ -45,40 +95,103 @@ const BluetoothScreen = ({ navigation, route }) => {
   const addLog = (message) => {
     const timestamp = new Date().toLocaleTimeString();
     setLogs(prevLogs => {
-      // En fazla 100 log tutuyoruz
+      // En fazla 50 log tutuyoruz (100 yerine 50'ye düşürdük)
       const newLogs = [`${timestamp}: ${message}`, ...prevLogs];
-      if (newLogs.length > 100) {
-        return newLogs.slice(0, 100);
+      if (newLogs.length > 50) {
+        return newLogs.slice(0, 50);
       }
       return newLogs;
     });
   };
 
+  // Düzenli aralıklarla log temizliği yapalım
+  useEffect(() => {
+    // Her 2 dakikada bir eski logları temizle
+    const logCleanupInterval = setInterval(() => {
+      setLogs(prevLogs => {
+        if (prevLogs.length > 25) { // 25'ten fazla log varsa, en son 20 tanesini tut
+          const trimmedLogs = prevLogs.slice(0, 20);
+          addLog("Eskiyen loglar otomatik temizlendi");
+          return trimmedLogs;
+        }
+        return prevLogs;
+      });
+    }, 120000); // 2 dakika = 120000ms
+
+    return () => clearInterval(logCleanupInterval);
+  }, []);
+
+  // Logs Section'ı daha verimli hale getirelim
+  const renderLogs = () => {
+    // Sadece son 10 log'u render edelim, kullanıcı isterse tam listeye bakabilir
+    const visibleLogs = logs.slice(0, 10);
+
+    if (visibleLogs.length === 0) {
+      return (
+        <Text style={[styles.emptyLogText, { color: theme.secondaryTextColor }]}>
+          Henüz log kaydı yok
+        </Text>
+      );
+    }
+
+    return (
+      <View style={styles.logsContainer}>
+        {visibleLogs.map((log, index) => (
+          <Text key={index} style={[styles.logText, { color: '#0dd' }]}>{log}</Text>
+        ))}
+        {logs.length > 10 && (
+          <Text style={[styles.logText, { color: theme.accentColor }]}>
+            ... ve {logs.length - 10} log daha ({logs.length} toplam)
+          </Text>
+        )}
+      </View>
+    );
+  };
+
   // Test verisi gönderme fonksiyonu
   const sendTestData = async () => {
-    if (!connected) {
+    // Bağlantı durumunu kontrol et
+    if (!BLEService.isDeviceConnected()) {
       addLog("Test verisi gönderilemedi: Bağlı cihaz yok");
+      updateConnectionStatus(); // UI'ı güncelle
       return;
     }
 
-    // Test motor değerleri oluştur
+    // Test motor değerleri
     const testMotorValues = {
       a: 10.50,
       b: -15.25,
       c: 20.00
     };
 
-    addLog(`Test verisi gönderiliyor: A:${testMotorValues.a}, B:${testMotorValues.b}, C:${testMotorValues.c}`);
+    addLog(`Test joystick verisi gönderiliyor: A:${testMotorValues.a}, B:${testMotorValues.b}, C:${testMotorValues.c}`);
 
     try {
+      // Önce basit bir test dizesi gönderelim
+      addLog("Basit test dizesi gönderiliyor: 'HELLO_ESP32'");
+      const stringSuccess = await BLEService.sendTestData("HELLO_ESP32");
+      if (stringSuccess) {
+        addLog("✅ TEST DİZESİ GÖNDERİLDİ");
+      } else {
+        addLog("❌ Test dizesi gönderilemedi");
+        updateConnectionStatus(); // Bağlantı durumunu güncelle
+      }
+
+      // Kısa bir bekleme ekleyelim
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Sonra motor değerlerini gönderelim
+      addLog("Joystick test verisi gönderiliyor...");
       const success = await BLEService.sendJoystickData(testMotorValues);
       if (success) {
-        addLog("✅ TEST VERİSİ GÖNDERİLDİ");
+        addLog("✅ JOYSTICK TEST VERİSİ GÖNDERİLDİ");
       } else {
-        addLog("❌ Test verisi gönderilemedi");
+        addLog("❌ Joystick test verisi gönderilemedi");
+        updateConnectionStatus(); // Bağlantı durumunu güncelle
       }
     } catch (error) {
       addLog(`❌ Test verisi gönderme hatası: ${error}`);
+      updateConnectionStatus(); // Hata durumunda bağlantıyı kontrol et
     }
   };
 
@@ -112,6 +225,7 @@ const BluetoothScreen = ({ navigation, route }) => {
       // Clear devices list and start scanning
       setDevicesList([]);
       setScanning(true);
+      setScanTimer(10); // Reset timer to 10 seconds
 
       const startSuccess = await BLEService.startScan((device) => {
         // Add device if not already in list
@@ -128,15 +242,14 @@ const BluetoothScreen = ({ navigation, route }) => {
         setScanning(false);
         addLog('Tarama başlatılamadı! İzinleri kontrol edin.');
         Alert.alert('Tarama Başlatılamadı', 'Bluetooth izinlerini kontrol edin.');
+        return;
       }
 
       // Auto-stop scan after 10 seconds
       setTimeout(() => {
-        if (scanning) {
-          BLEService.stopScan();
-          setScanning(false);
-          addLog('Tarama otomatik olarak durduruldu (10 sn timeout)');
-        }
+        BLEService.stopScan();
+        setScanning(false);
+        addLog('Tarama otomatik olarak durduruldu (10 sn timeout)');
       }, 10000);
 
     } catch (error) {
@@ -145,6 +258,12 @@ const BluetoothScreen = ({ navigation, route }) => {
       addLog(`Tarama hatası: ${error}`);
       Alert.alert('Hata', 'Tarama sırasında bir hata oluştu.');
     }
+  };
+
+  const stopScan = () => {
+    BLEService.stopScan();
+    setScanning(false);
+    addLog('Tarama manuel olarak durduruldu');
   };
 
   const connectToDevice = async (device) => {
@@ -160,6 +279,9 @@ const BluetoothScreen = ({ navigation, route }) => {
         addLog(`Service UUID: ${BLEService.serviceUUID}`);
         addLog(`Characteristic UUID: ${BLEService.characteristicUUID}`);
         Alert.alert('Bağlantı Başarılı', `${device.name || device.id} cihazına bağlandı.`);
+
+        // Bağlantı durumunu HomeScreen'e gönder
+        navigation.navigate('Joystick', { connected: true });
       } else {
         addLog(`'${device.name || device.id}' cihazına bağlanılamadı!`);
         Alert.alert('Bağlantı Hatası', 'Cihaza bağlanılamadı.');
@@ -177,6 +299,9 @@ const BluetoothScreen = ({ navigation, route }) => {
     setConnected(false);
     setSelectedDevice(null);
     addLog('Cihaz bağlantısı kesildi');
+
+    // Bağlantı durumunu HomeScreen'e gönder
+    navigation.navigate('Joystick', { connected: false });
   };
 
   const renderDeviceItem = ({ item }) => (
@@ -242,17 +367,12 @@ const BluetoothScreen = ({ navigation, route }) => {
                     { backgroundColor: theme.secondaryTextColor } :
                     { backgroundColor: theme.primaryColor }
                 ]}
-                onPress={scanning ? () => {
-                  BLEService.stopScan();
-                  setScanning(false);
-                  addLog('Tarama manuel olarak durduruldu');
-                } : startScan}
-                disabled={scanning}
+                onPress={scanning ? stopScan : startScan}
               >
                 {scanning ? (
                   <View style={styles.buttonContent}>
                     <ActivityIndicator color="#fff" size="small" />
-                    <Text style={styles.buttonText}>Taranıyor...</Text>
+                    <Text style={styles.buttonText}>Taranıyor... ({scanTimer}s)</Text>
                   </View>
                 ) : (
                   <Text style={styles.buttonText}>Cihazları Tara</Text>
@@ -340,22 +460,7 @@ const BluetoothScreen = ({ navigation, route }) => {
             </TouchableOpacity>
           </View>
 
-          <View style={styles.logsContainer}>
-            {logs.length > 0 ? (
-              <FlatList
-                data={logs}
-                renderItem={({item}) => (
-                  <Text style={[styles.logText, { color: '#0dd' }]}>{item}</Text>
-                )}
-                keyExtractor={(item, index) => index.toString()}
-                style={styles.logsList}
-              />
-            ) : (
-              <Text style={[styles.emptyLogText, { color: theme.secondaryTextColor }]}>
-                Henüz log kaydı yok
-              </Text>
-            )}
-          </View>
+          {renderLogs()}
         </View>
       </View>
     </SafeAreaView>
@@ -530,9 +635,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   logsContainer: {
-    flex: 1,
-  },
-  logsList: {
     flex: 1,
   },
   logText: {
