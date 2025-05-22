@@ -59,22 +59,54 @@ const HomeScreen = ({ navigation, route }) => {
   // Constants for calculations - route'dan gelen değerleri al veya varsayılanları kullan
   const [constants, setConstants] = useState(defaultConstants);
 
-  // Bağlantı durumunu kontrol et (basitleştirilmiş)
-  const checkConnectionStatus = () => {
-    const isConnected = BLEService.isDeviceConnected();
-    if (isConnected !== connected) {
-      smartLog(`Bağlantı durumu değişti: ${isConnected ? 'Bağlı' : 'Bağlı Değil'}`);
-      setConnected(isConnected);
+  // Bağlantı durumunu kontrol et (iyileştirilmiş)
+  const checkConnectionStatus = async () => {
+    try {
+      const isConnected = await BLEService.isDeviceConnected();
+      if (isConnected !== connected) {
+        smartLog(`Bağlantı durumu değişti: ${isConnected ? 'Bağlı' : 'Bağlı Değil'}`);
+        setConnected(isConnected);
+      }
+      return isConnected;
+    } catch (error) {
+      smartLog('Bağlantı durumu kontrolü hatası: ' + error, 'error');
+      // Hata durumunda bağlantı kopmuş sayalım
+      setConnected(false);
+      return false;
     }
-    return isConnected;
   };
 
-  // İlk başlangıçta bağlantı durumunu kontrol et
+  // İlk başlangıçta ve periyodik olarak bağlantı durumunu kontrol et
   useEffect(() => {
-    const isConnected = BLEService.isDeviceConnected();
-    smartLog(`İlk BLE bağlantı durumu: ${isConnected ? 'Bağlı' : 'Bağlı Değil'}`);
-    setConnected(isConnected);
-  }, []);
+    const checkConnection = async () => {
+      const isConnected = await BLEService.isDeviceConnected();
+      smartLog(`İlk BLE bağlantı durumu: ${isConnected ? 'Bağlı' : 'Bağlı Değil'}`);
+      setConnected(isConnected);
+    };
+
+    checkConnection();
+
+    // Her 5 saniyede bir bağlantıyı kontrol et
+    const connectionCheckInterval = setInterval(async () => {
+      try {
+        // İç state güncellemesi her zaman yapılmasın, sadece gerçek durumla farklılık varsa
+        const isConnected = await BLEService.isDeviceConnected();
+
+        if (isConnected !== connected) {
+          smartLog(`Periyodik kontrolde bağlantı durumu değişimi tespit edildi: ${isConnected ? 'Bağlı' : 'Bağlı Değil'}`);
+          setConnected(isConnected);
+        }
+      } catch (error) {
+        smartLog('Periyodik bağlantı kontrolü hatası: ' + error, 'error');
+        // Hata durumunda bağlantı kopmuş sayalım
+        setConnected(false);
+      }
+    }, 5000);
+
+    return () => {
+      clearInterval(connectionCheckInterval);
+    };
+  }, []); // Connected'ı dependency'den kaldırdık
 
   // Update constants when route params change
   useEffect(() => {
@@ -118,10 +150,23 @@ const HomeScreen = ({ navigation, route }) => {
       return;
     }
 
-    // Basit bağlantı kontrolü - BLEService'in durumunu doğrudan kullan
+    // Her veri göndermeden önce bağlantı durumunu doğrula
+    try {
+      const isReallyConnected = await BLEService.isDeviceConnected();
+      if (!isReallyConnected) {
+        smartLog("❌ BLE bağlantısı yok veya kopmuş, veri gönderilemiyor", 'error');
+        setConnected(false);
+        setSendSuccess(false);
+        return;
+      }
+    } catch (error) {
+      smartLog("❌ Bağlantı kontrolü hatası: " + error, 'error');
+    }
+
+    // Hala BLEService.isConnected kontrolü yap (güvenlik için)
     if (!BLEService.isConnected || !BLEService.device) {
-      smartLog("❌ BLE bağlantısı yok, veri gönderilemiyor", 'error');
-      setConnected(false); // UI'ı güncelle
+      smartLog("❌ BLE iç bağlantı durumu kontrolünde hata: BLEService göstergeleri kopuk", 'error');
+      setConnected(false);
       setSendSuccess(false);
       return;
     }
@@ -145,14 +190,24 @@ const HomeScreen = ({ navigation, route }) => {
         }
       } else {
         smartLog('❌ Joystick verisi gönderilemedi', 'error');
-        // Bağlantı durumunu güncelle
-        checkConnectionStatus();
+
+        // Bağlantı durumunu tekrar güncelle (async olarak çalıştır ama sonucu bekleme)
+        BLEService.isDeviceConnected()
+          .then(isConnected => {
+            if (!isConnected) setConnected(false);
+          })
+          .catch(err => smartLog('Bağlantı kontrol hatası: ' + err, 'error'));
       }
     } catch (error) {
       smartLog('❌ Veri gönderim hatası: ' + error, 'error');
       setSendSuccess(false);
-      // Bağlantı durumunu güncelle
-      checkConnectionStatus();
+
+      // Bağlantı durumunu tekrar güncelle (async olarak çalıştır ama sonucu bekleme)
+      BLEService.isDeviceConnected()
+        .then(isConnected => {
+          if (!isConnected) setConnected(false);
+        })
+        .catch(err => smartLog('Bağlantı kontrol hatası: ' + err, 'error'));
     } finally {
       // Mark that we're done sending
       sendingRef.current = false;

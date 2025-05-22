@@ -131,14 +131,54 @@ class BLEService {
   }
 
   // Gerçek bağlantı durumunu kontrol eder
-  isDeviceConnected() {
+  async isDeviceConnected() {
     // Test modunda her zaman bağlı kabul edelim
     if (this.testMode) {
       return true;
     }
 
-    // Basit bir kontrol: device var mı ve isConnected flag'i aktif mi?
-    return (this.device != null && this.isConnected);
+    // Cihaz nesnesi yoksa kesinlikle bağlı değiliz
+    if (!this.device) {
+      this.isConnected = false;
+      return false;
+    }
+
+    // İç flag değerine göre durumu kontrol et
+    if (!this.isConnected) {
+      return false;
+    }
+
+    // Performans için her 5 saniyede bir gerçek durumu kontrol edelim ve flag ile saklayalım
+    // Bu, çok sık yapılan isDeviceConnected() çağrılarında BLE operasyonunu sürekli tekrarlamamak için
+    const now = Date.now();
+    if (!this._lastConnectionCheck || now - this._lastConnectionCheck > 5000) {
+      try {
+        this._lastConnectionCheck = now;
+
+        // isConnected metodunu kullanarak cihazın bağlı olup olmadığını kontrol et
+        // Bu metod connectedDevices'dan daha hafif bir operasyondur
+        const isConnected = await this.device.isConnected();
+
+        // Eğer bağlantı durumunda bir tutarsızlık varsa, flag'i güncelle
+        if (this.isConnected !== isConnected) {
+          this.log(`Bağlantı durumu tutarsızlığı tespit edildi.
+                  İç durum: ${this.isConnected ? 'Bağlı' : 'Bağlı değil'},
+                  Gerçek durum: ${isConnected ? 'Bağlı' : 'Bağlı değil'}`, 'warning');
+          this.isConnected = isConnected;
+        }
+
+        return isConnected;
+      } catch (error) {
+        this.log('Bağlantı durumu kontrolünde hata: ' + error, 'error');
+        // Oluşan hata büyük ihtimalle cihazın artık mevcut olmaması
+        // Bu durumda bağlantıyı kopmuş kabul et
+        this.isConnected = false;
+        return false;
+      }
+    }
+
+    // Eğer çok yakın zamanda bir kontrol yapıldıysa, sakladığımız flag değerini kullan
+    return this.isConnected;
   }
 
   // Connect to a device
@@ -146,9 +186,9 @@ class BLEService {
     try {
       // Test modunda bağlantıyı simüle et
       if (this.testMode) {
-        this.log(`Test modunda ${device.name} cihazına bağlanılıyor...`);
+        this.log(`Test modunda ${device.name || device.id} cihazına bağlanılıyor...`);
         // Bağlantıyı simüle et
-        await new Promise(resolve => setTimeout(resolve, 1500));
+        await new Promise(resolve => setTimeout(resolve, 1000));
 
         this.device = device;
         this.isConnected = true;
@@ -163,61 +203,102 @@ class BLEService {
       this.stopScan();
 
       this.log(`${device.name || device.id} cihazına bağlanılıyor...`);
-      // Connect to the device
-      const connectedDevice = await device.connect();
-      this.log('Cihaza bağlanıldı, servisler keşfediliyor...');
 
-      // Discover all services and characteristics
-      const discoverDevice = await connectedDevice.discoverAllServicesAndCharacteristics();
-      this.log('Servisler ve karakteristikler keşfedildi');
-
-      // Get services
-      const services = await discoverDevice.services();
-      this.log(`${services.length} servis bulundu`);
-
-      // Find the service and characteristic for our ESP32
-      let found = false;
-
-      for (const service of services) {
-        this.log(`Servis UUID: ${service.uuid} inceleniyor`);
-        const characteristics = await service.characteristics();
-
-        // Çok fazla log basılmasını önlemek için servis detaylarını sadece gerektiğinde göster
-        if (characteristics.length > 0) {
-          this.log(`Bu serviste ${characteristics.length} karakteristik bulundu`);
+      // Önce mevcut bağlantıyı temizle
+      if (this.device) {
+        try {
+          this.log('Önceki bağlantı temizleniyor...');
+          await this.device.cancelConnection();
+          this.device = null;
+          this.isConnected = false;
+        } catch (error) {
+          this.log('Önceki bağlantıyı temizlerken hata: ' + error, 'warning');
+          // Devam et, bu önemli bir hata değil
         }
-
-        for (const characteristic of characteristics) {
-          // Gereksiz karakteristik loglarını azaltalım
-          if (characteristic.isWritableWithResponse || characteristic.isWritableWithoutResponse) {
-            this.log(`Yazılabilir karakteristik bulundu: ${characteristic.uuid}`);
-            this.characteristicUUID = characteristic.uuid;
-            this.serviceUUID = service.uuid;
-            found = true;
-            break;
-          }
-        }
-
-        if (found) break;
       }
 
-      if (!found) {
-        this.log('Uygun yazılabilir karakteristik bulunamadı!', 'error');
-      }
-
-      this.device = discoverDevice;
-      this.isConnected = true;
-
-      // Setup disconnection listener
-      this.device.onDisconnected((error, disconnectedDevice) => {
+      // Connect to the device with timeout
+      let connectedDevice;
+      try {
+        connectedDevice = await device.connect({
+          timeout: 10000, // 10 saniye bağlantı zaman aşımı
+          autoConnect: false // Android için önemli
+        });
+        this.log('Cihaza bağlanıldı, servisler keşfediliyor...');
+      } catch (connectError) {
+        this.log('Cihaza bağlantı başarısız: ' + connectError, 'error');
         this.isConnected = false;
-        this.device = null;
-        this.log('Cihaz bağlantısı kesildi', 'error');
-      });
+        return false;
+      }
 
-      return true;
+      // Disconnect listener'ı ayarla
+      try {
+        connectedDevice.onDisconnected((error, disconnectedDevice) => {
+          if (disconnectedDevice && disconnectedDevice.id === this.device?.id) {
+            this.log('Cihaz bağlantısı kesildi: ' + disconnectedDevice.id, 'error');
+            this.isConnected = false;
+            this.device = null;
+          }
+        });
+      } catch (listenerError) {
+        this.log('Bağlantı dinleyici hatası (önemli değil): ' + listenerError, 'warning');
+      }
+
+      try {
+        // Discover all services and characteristics
+        const discoverDevice = await connectedDevice.discoverAllServicesAndCharacteristics();
+        this.log('Servisler ve karakteristikler keşfedildi');
+
+        // Cihaz referansını sakla ve durumu güncelle
+        this.device = discoverDevice;
+        this.isConnected = true;
+
+        // Get services
+        const services = await discoverDevice.services();
+        this.log(`${services.length} servis bulundu`);
+
+        // Find the service and characteristic for our ESP32
+        let found = false;
+
+        for (const service of services) {
+          this.log(`Servis UUID: ${service.uuid} inceleniyor`);
+          const characteristics = await service.characteristics();
+
+          if (characteristics.length > 0) {
+            this.log(`Bu serviste ${characteristics.length} karakteristik bulundu`);
+          }
+
+          for (const characteristic of characteristics) {
+            if (characteristic.isWritableWithResponse || characteristic.isWritableWithoutResponse) {
+              this.log(`Yazılabilir karakteristik bulundu: ${characteristic.uuid}`);
+              this.characteristicUUID = characteristic.uuid;
+              this.serviceUUID = service.uuid;
+              found = true;
+              break;
+            }
+          }
+
+          if (found) break;
+        }
+
+        if (!found) {
+          this.log('Uygun yazılabilir karakteristik bulunamadı!', 'error');
+          // Yine de devam et, belki başka bir serviste bulunabilir
+        }
+
+        return true;
+      } catch (discoverError) {
+        this.log('Servis keşfetme hatası: ' + discoverError, 'error');
+        // Bağlantı kuruldu ama servisler bulunamadıysa yine de başarılı kabul et
+        // UI'da uyarı gösterilecek ama bağlantı açık kalacak
+        this.isConnected = true;
+        this.device = connectedDevice;
+        return true;
+      }
     } catch (error) {
       this.log('Bağlantı hatası: ' + error, 'error');
+      this.isConnected = false;
+      this.device = null;
       return false;
     }
   }

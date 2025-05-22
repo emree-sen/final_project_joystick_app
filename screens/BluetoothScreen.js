@@ -15,47 +15,113 @@ const BluetoothScreen = ({ navigation, route }) => {
   const [logs, setLogs] = useState([]);
   const timerRef = useRef(null);
 
-  // Bağlantı durumunu güncelleme fonksiyonu (basitleştirilmiş)
-  const updateConnectionStatus = () => {
-    const isConnected = BLEService.isDeviceConnected();
-    if (isConnected !== connected) {
-      addLog(`Bağlantı durumu değişti: ${isConnected ? 'Bağlı' : 'Bağlı Değil'}`);
-      setConnected(isConnected);
+  // Bağlantı durumunu güncelleme fonksiyonu (iyileştirilmiş ve sadece kontrol eden)
+  const updateConnectionStatus = async () => {
+    try {
+      // Öncelikle BLEService'deki basit durumu kontrol et
+      const isConnected = await BLEService.isDeviceConnected();
 
-      if (isConnected) {
-        setSelectedDevice(BLEService.device);
-      } else {
-        setSelectedDevice(null);
+      // Eğer bağlı görünüyorsa, gerçekten bağlı olduğundan emin olmak için test et
+      if (isConnected && BLEService.device) {
+        const isReallyConnected = await testConnection();
+
+        if (!isReallyConnected) {
+          // Bağlantı kopmuş ancak servis bunu henüz bilmiyor
+          addLog("Bağlantı durumu yanlış! Gerçekten bağlı değil.");
+          BLEService.isConnected = false; // Strong force update
+          return false;
+        }
       }
+
+      // Durumu sadece logla ama burada setState yapma
+      if (isConnected !== connected) {
+        addLog(`Bağlantı durumu kontrolü: ${isConnected ? 'Bağlı' : 'Bağlı Değil'}`);
+      }
+
+      return isConnected;
+    } catch (error) {
+      addLog(`Bağlantı durumu kontrolünde hata: ${error}`);
+      return false;
     }
-    return isConnected;
+  };
+
+  // Bağlantıyı test et - daha basit bir yaklaşım
+  const testConnection = async () => {
+    if (!BLEService.device) return false;
+
+    try {
+      // Test modundaysa bağlantı var kabul et
+      if (BLEService.testMode) return true;
+
+      // BleManager'dan durumu kontrol et
+      return await BLEService.isDeviceConnected();
+    } catch (error) {
+      addLog(`Bağlantı testi hatası: ${error}`);
+      return false;
+    }
   };
 
   useEffect(() => {
     // Ekran açıldığında bağlantı durumunu kontrol et
-    const isConnected = BLEService.isDeviceConnected();
-    if (isConnected) {
-      setConnected(true);
-      setSelectedDevice(BLEService.device);
-      addLog('Mevcut bağlantı bulundu');
-    }
+    const checkConnection = async () => {
+      try {
+        const isConnected = await updateConnectionStatus();
+        if (isConnected) {
+          setConnected(true);
+          setSelectedDevice(BLEService.device);
+          addLog('Mevcut bağlantı bulundu');
+        } else {
+          // Eğer bağlantı yoksa, temiz başlangıç yap
+          setConnected(false);
+          setSelectedDevice(null);
+          addLog('Mevcut aktif bağlantı yok');
+        }
+      } catch (error) {
+        addLog(`Bağlantı durumu kontrolünde hata: ${error}`);
+      }
+    };
+
+    checkConnection();
 
     // Test mode durumunu BLEService'den al
     setTestMode(BLEService.testMode);
 
-    // Ekrandan ayrılırken bağlantı bilgisini HomeScreen'e gönder
+    // Bluetooth ekranı açık olduğu sürece her 5 saniyede bir bağlantı durumunu kontrol et
+    const connectionCheckInterval = setInterval(async () => {
+      try {
+        // İç state güncellemesi her zaman yapılmasın, sadece gerçek durumla farklılık varsa
+        const isConnected = await BLEService.isDeviceConnected();
+
+        if (isConnected !== connected) {
+          addLog(`Periyodik kontrolde bağlantı durumu değişimi tespit edildi: ${isConnected ? 'Bağlı' : 'Bağlı Değil'}`);
+          setConnected(isConnected);
+
+          if (isConnected) {
+            setSelectedDevice(BLEService.device);
+          } else {
+            setSelectedDevice(null);
+          }
+        }
+      } catch (error) {
+        addLog(`Periyodik bağlantı kontrolünde hata: ${error}`);
+      }
+    }, 5000);
+
+    // Ekrandan ayrılırken bağlantı bilgisini HomeScreen'e gönder ve interval temizle
     return () => {
       if (timerRef.current) {
         clearInterval(timerRef.current);
         timerRef.current = null;
       }
 
+      clearInterval(connectionCheckInterval);
+
       if (BLEService.isDeviceConnected()) {
         navigation.navigate('Joystick', { connected: true });
         addLog('HomeScreen\'e bağlantı durumu iletiliyor: Bağlı');
       }
     };
-  }, []);
+  }, []); // Connected'ı dependency'den kaldırdık
 
   // Geri sayım timer'ı
   useEffect(() => {
@@ -233,25 +299,63 @@ const BluetoothScreen = ({ navigation, route }) => {
       setSelectedDevice(device);
       addLog(`'${device.name || device.id}' cihazına bağlanılıyor...`);
 
+      // Test modunda ise özel işleme
+      if (BLEService.testMode) {
+        const connectionSuccessful = await BLEService.connectToDevice(device);
+        if (connectionSuccessful) {
+          setConnected(true);
+          addLog(`'${device.name || device.id}' cihazına test bağlantısı başarılı!`);
+          Alert.alert('Bağlantı Başarılı', `${device.name || device.id} cihazına bağlandı (TEST MODU).`);
+          navigation.navigate('Joystick', { connected: true });
+        } else {
+          addLog(`'${device.name || device.id}' cihazına test bağlantısı başarısız!`);
+          Alert.alert('Bağlantı Hatası', 'Test modunda cihaz bağlantısı başarısız oldu.');
+        }
+        return;
+      }
+
+      // Gerçek cihaz bağlantı işlemi
       const connectionSuccessful = await BLEService.connectToDevice(device);
 
-      if (connectionSuccessful) {
-        setConnected(true);
-        addLog(`'${device.name || device.id}' cihazına bağlantı başarılı!`);
-        addLog(`Service UUID: ${BLEService.serviceUUID}`);
-        addLog(`Characteristic UUID: ${BLEService.characteristicUUID}`);
-        Alert.alert('Bağlantı Başarılı', `${device.name || device.id} cihazına bağlandı.`);
-
-        // Bağlantı durumunu HomeScreen'e gönder
-        navigation.navigate('Joystick', { connected: true });
-      } else {
-        addLog(`'${device.name || device.id}' cihazına bağlanılamadı!`);
+      if (!connectionSuccessful) {
+        // Bağlantı başarısız olduysa hemen hata ver
+        addLog(`'${device.name || device.id}' cihazına bağlantı başarısız oldu!`);
         Alert.alert('Bağlantı Hatası', 'Cihaza bağlanılamadı.');
+        return;
       }
+
+      // Arayüzü güncelle - bu noktada bağlantı kurulmuştur
+      setConnected(true);
+      addLog(`'${device.name || device.id}' cihazına bağlantı kuruldu!`);
+
+      // Bağlantının stabil olduğuna emin olmak için 500ms bekle ve test et
+      setTimeout(async () => {
+        try {
+          // BLEService'den doğrudan bilgileri al
+          addLog(`Service UUID: ${BLEService.serviceUUID}`);
+          addLog(`Characteristic UUID: ${BLEService.characteristicUUID}`);
+
+          // Servis/karakteristik bilgileri varsa başarılı kabul et
+          if (BLEService.serviceUUID && BLEService.characteristicUUID) {
+            addLog(`'${device.name || device.id}' cihazına bağlantı tamamlandı ve servisler hazır!`);
+            Alert.alert('Bağlantı Başarılı', `${device.name || device.id} cihazına bağlandı.`);
+
+            // Bağlantı durumunu HomeScreen'e gönder
+            navigation.navigate('Joystick', { connected: true });
+          } else {
+            addLog(`'${device.name || device.id}' için gerekli servisler bulunamadı!`);
+            Alert.alert('Uyarı', 'Cihaza bağlanıldı ancak gerekli BLE servisleri bulunamadı!');
+          }
+        } catch (finalCheckError) {
+          addLog(`Son bağlantı kontrolünde hata: ${finalCheckError}`);
+        }
+      }, 500);
+
     } catch (error) {
       console.log('Connection error:', error);
       addLog(`Bağlantı hatası: ${error}`);
       Alert.alert('Bağlantı Hatası', 'Cihaza bağlanırken bir hata oluştu.');
+      setConnected(false);
     }
   };
 
@@ -341,9 +445,9 @@ const BluetoothScreen = ({ navigation, route }) => {
                 )}
               </TouchableOpacity>
             ) : (
-              <View style={styles.buttonGroup}>
+              <View style={styles.centerButtonContainer}>
                 <TouchableOpacity
-                  style={[styles.actionButton, { backgroundColor: theme.accentColor }]}
+                  style={[styles.disconnectButton, { backgroundColor: theme.accentColor }]}
                   onPress={disconnectDevice}
                 >
                   <Text style={styles.buttonText}>Bağlantıyı Kes</Text>
@@ -584,6 +688,22 @@ const styles = StyleSheet.create({
     fontSize: 16,
     textAlign: 'center',
     marginTop: 20,
+  },
+  centerButtonContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    marginVertical: 10,
+  },
+  disconnectButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    minWidth: '80%',
   },
 });
 
