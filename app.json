@@ -30,6 +30,9 @@
       "eas": {
         "projectId": "33db8f56-2ae3-4cca-87eb-37e2e214aa14"
       }
-    }
+    },
+    "plugins": [
+      "react-native-ble-plx"
+    ]
   }
 }
